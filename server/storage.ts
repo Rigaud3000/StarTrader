@@ -87,9 +87,9 @@ export class MemStorage implements IStorage {
   private initializeSampleData() {
     this.mt5Config = {
       id: randomUUID(),
-      login: "",
-      password: "",
-      server: "",
+      login: process.env.MT5_LOGIN || "",
+      password: process.env.MT5_PASSWORD || "",
+      server: process.env.MT5_SERVER || "",
       connected: false,
       accountBalance: 10000,
       accountEquity: 10000,

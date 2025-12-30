@@ -393,5 +393,21 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/settings/app", async (req, res) => {
+    try {
+      res.json({
+        paperTrading: process.env.PAPER_TRADING === "true",
+        defaultSymbol: process.env.DEFAULT_SYMBOL || "EURUSD",
+        defaultTimeframe: process.env.DEFAULT_TIMEFRAME || "M5",
+        maxOpenPositions: parseInt(process.env.MAX_OPEN_POSITIONS || "2"),
+        maxLot: parseFloat(process.env.MAX_LOT || "0.10"),
+        maxSpreadPoints: parseInt(process.env.MAX_SPREAD_POINTS || "25"),
+        maxDailyLossPct: parseFloat(process.env.MAX_DAILY_LOSS_PCT || "3.0"),
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get app settings" });
+    }
+  });
+
   return httpServer;
 }

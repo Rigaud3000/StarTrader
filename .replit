@@ -37,3 +37,14 @@ author = "agent"
 task = "shell.exec"
 args = "npm run dev"
 waitForPort = 5000
+
+[userenv]
+
+[userenv.shared]
+PAPER_TRADING = "true"
+DEFAULT_SYMBOL = "EURUSD"
+DEFAULT_TIMEFRAME = "M5"
+MAX_OPEN_POSITIONS = "2"
+MAX_LOT = "0.10"
+MAX_SPREAD_POINTS = "25"
+MAX_DAILY_LOSS_PCT = "3.0"
