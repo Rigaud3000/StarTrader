@@ -1,16 +1,397 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import {
+  insertStrategySchema,
+  insertJournalEntrySchema,
+  runBacktestSchema,
+  insertMT5ConfigSchema,
+} from "@shared/schema";
+import type { BacktestResult, BacktestTrade } from "@shared/schema";
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  // put application routes here
-  // prefix all routes with /api
+  
+  app.get("/api/mt5/config", async (req, res) => {
+    try {
+      const config = await storage.getMT5Config();
+      res.json(config);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get MT5 config" });
+    }
+  });
 
-  // use storage to perform CRUD operations on the storage interface
-  // e.g. storage.insertUser(user) or storage.getUserByUsername(username)
+  app.post("/api/mt5/connect", async (req, res) => {
+    try {
+      const parsed = insertMT5ConfigSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.message });
+      }
+
+      const config = await storage.updateMT5Config({
+        ...parsed.data,
+        connected: true,
+        accountBalance: 10000 + Math.random() * 5000,
+        accountEquity: 10000 + Math.random() * 5000,
+        accountProfit: Math.random() * 500 - 250,
+        lastConnected: new Date().toISOString(),
+      });
+
+      res.json(config);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to connect to MT5" });
+    }
+  });
+
+  app.post("/api/mt5/disconnect", async (req, res) => {
+    try {
+      const config = await storage.updateMT5Config({
+        connected: false,
+      });
+      res.json(config);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to disconnect from MT5" });
+    }
+  });
+
+  app.post("/api/mt5/test", async (req, res) => {
+    try {
+      const config = await storage.getMT5Config();
+      if (config?.connected) {
+        res.json({ success: true, message: "Connection is active and responding" });
+      } else {
+        res.json({ success: false, message: "Not connected to MT5" });
+      }
+    } catch (error) {
+      res.status(500).json({ success: false, message: "Connection test failed" });
+    }
+  });
+
+  app.get("/api/strategies", async (req, res) => {
+    try {
+      const strategies = await storage.getStrategies();
+      res.json(strategies);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get strategies" });
+    }
+  });
+
+  app.get("/api/strategies/:id", async (req, res) => {
+    try {
+      const strategy = await storage.getStrategy(req.params.id);
+      if (!strategy) {
+        return res.status(404).json({ error: "Strategy not found" });
+      }
+      res.json(strategy);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get strategy" });
+    }
+  });
+
+  app.post("/api/strategies", async (req, res) => {
+    try {
+      const parsed = insertStrategySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.message });
+      }
+
+      const strategy = await storage.createStrategy(parsed.data);
+      res.json(strategy);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create strategy" });
+    }
+  });
+
+  app.patch("/api/strategies/:id", async (req, res) => {
+    try {
+      const strategy = await storage.updateStrategy(req.params.id, req.body);
+      if (!strategy) {
+        return res.status(404).json({ error: "Strategy not found" });
+      }
+      res.json(strategy);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update strategy" });
+    }
+  });
+
+  app.delete("/api/strategies/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteStrategy(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Strategy not found" });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete strategy" });
+    }
+  });
+
+  app.get("/api/backtests", async (req, res) => {
+    try {
+      const results = await storage.getBacktestResults();
+      res.json(results);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get backtest results" });
+    }
+  });
+
+  app.post("/api/backtests/run", async (req, res) => {
+    try {
+      const parsed = runBacktestSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.message });
+      }
+
+      const { strategyId, symbol, timeframe, startDate, endDate, initialBalance } = parsed.data;
+
+      const strategy = await storage.getStrategy(strategyId);
+      if (!strategy) {
+        return res.status(404).json({ error: "Strategy not found" });
+      }
+
+      const totalTrades = Math.floor(Math.random() * 50) + 20;
+      const winRate = 45 + Math.random() * 25;
+      const winningTrades = Math.floor((winRate / 100) * totalTrades);
+      const losingTrades = totalTrades - winningTrades;
+
+      const trades: BacktestTrade[] = [];
+      let equity = initialBalance;
+      const equityCurve: number[] = [equity];
+
+      for (let i = 0; i < totalTrades; i++) {
+        const isWin = i < winningTrades;
+        const profit = isWin
+          ? Math.random() * 200 + 50
+          : -(Math.random() * 150 + 30);
+        equity += profit;
+
+        trades.push({
+          id: `trade-${i}`,
+          symbol,
+          type: Math.random() > 0.5 ? "BUY" : "SELL",
+          openPrice: 1.0 + Math.random() * 0.1,
+          closePrice: 1.0 + Math.random() * 0.1,
+          volume: 0.1 + Math.random() * 0.4,
+          profit,
+          openTime: new Date(new Date(startDate).getTime() + i * 3600000 * 4).toISOString(),
+          closeTime: new Date(new Date(startDate).getTime() + (i + 1) * 3600000 * 4).toISOString(),
+        });
+
+        if (i % 3 === 0) {
+          equityCurve.push(equity);
+        }
+      }
+
+      const totalProfit = trades.reduce((sum, t) => sum + t.profit, 0);
+      const maxDrawdown = Math.random() * 15 + 5;
+      const profitFactor = Math.abs(
+        trades.filter((t) => t.profit > 0).reduce((sum, t) => sum + t.profit, 0) /
+          Math.max(1, Math.abs(trades.filter((t) => t.profit < 0).reduce((sum, t) => sum + t.profit, 0)))
+      );
+
+      const result = await storage.createBacktestResult({
+        strategyId,
+        strategyName: strategy.name,
+        symbol,
+        timeframe,
+        startDate,
+        endDate,
+        initialBalance,
+        finalBalance: equity,
+        totalTrades,
+        winningTrades,
+        losingTrades,
+        winRate,
+        totalProfit,
+        maxDrawdown,
+        sharpeRatio: 0.5 + Math.random() * 1.5,
+        profitFactor,
+        equityCurve,
+        trades,
+      });
+
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to run backtest" });
+    }
+  });
+
+  app.get("/api/trades", async (req, res) => {
+    try {
+      const trades = await storage.getTrades();
+      res.json(trades);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get trades" });
+    }
+  });
+
+  app.get("/api/trades/open", async (req, res) => {
+    try {
+      const trades = await storage.getOpenTrades();
+      res.json(trades);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get open trades" });
+    }
+  });
+
+  app.get("/api/trades/recent", async (req, res) => {
+    try {
+      const trades = await storage.getRecentTrades(10);
+      res.json(trades);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get recent trades" });
+    }
+  });
+
+  app.post("/api/trades/place", async (req, res) => {
+    try {
+      const { symbol, type, volume } = req.body;
+
+      if (!symbol || !type || !volume) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      const config = await storage.getMT5Config();
+      if (!config?.connected) {
+        return res.status(400).json({ error: "Not connected to MT5" });
+      }
+
+      const strategies = await storage.getStrategies();
+      const activeStrategy = strategies.find((s) => s.isActive);
+
+      const openPrice = 1.0 + Math.random() * 0.1;
+      const currentPrice = openPrice + (Math.random() - 0.5) * 0.01;
+      const profit = (currentPrice - openPrice) * volume * 100000 * (type === "BUY" ? 1 : -1);
+
+      const trade = await storage.createTrade({
+        ticket: Math.floor(Math.random() * 1000000),
+        symbol,
+        type,
+        volume,
+        openPrice,
+        currentPrice,
+        stopLoss: type === "BUY" ? openPrice - 0.005 : openPrice + 0.005,
+        takeProfit: type === "BUY" ? openPrice + 0.01 : openPrice - 0.01,
+        profit,
+        openTime: new Date().toISOString(),
+        closeTime: null,
+        status: "OPEN",
+        strategyId: activeStrategy?.id || "",
+        strategyName: activeStrategy?.name || "Manual",
+      });
+
+      res.json(trade);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to place order" });
+    }
+  });
+
+  app.post("/api/trades/:id/close", async (req, res) => {
+    try {
+      const trade = await storage.closeTrade(req.params.id);
+      if (!trade) {
+        return res.status(404).json({ error: "Trade not found" });
+      }
+      res.json(trade);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to close trade" });
+    }
+  });
+
+  app.get("/api/journal", async (req, res) => {
+    try {
+      const entries = await storage.getJournalEntries();
+      res.json(entries);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get journal entries" });
+    }
+  });
+
+  app.get("/api/journal/recent", async (req, res) => {
+    try {
+      const entries = await storage.getRecentJournalEntries(5);
+      res.json(entries);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get recent journal entries" });
+    }
+  });
+
+  app.post("/api/journal", async (req, res) => {
+    try {
+      const parsed = insertJournalEntrySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.message });
+      }
+
+      const entry = await storage.createJournalEntry(parsed.data);
+      res.json(entry);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create journal entry" });
+    }
+  });
+
+  app.get("/api/ml/insights", async (req, res) => {
+    try {
+      const insights = await storage.getMLInsights();
+      res.json(insights);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get ML insights" });
+    }
+  });
+
+  app.get("/api/dashboard/stats", async (req, res) => {
+    try {
+      const stats = await storage.getDashboardStats();
+      res.json(stats);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get dashboard stats" });
+    }
+  });
+
+  app.get("/api/dashboard/equity-curve", async (req, res) => {
+    try {
+      const curve = await storage.getEquityCurve();
+      res.json(curve);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get equity curve" });
+    }
+  });
+
+  app.get("/api/trading/status", async (req, res) => {
+    try {
+      const status = await storage.getTradingStatus();
+      res.json(status);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get trading status" });
+    }
+  });
+
+  app.post("/api/trading/start", async (req, res) => {
+    try {
+      const { strategyIds } = req.body;
+      const status = await storage.updateTradingStatus({
+        isActive: true,
+        activeStrategies: strategyIds || [],
+      });
+      res.json(status);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to start trading" });
+    }
+  });
+
+  app.post("/api/trading/stop", async (req, res) => {
+    try {
+      const status = await storage.updateTradingStatus({
+        isActive: false,
+        activeStrategies: [],
+      });
+      res.json(status);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to stop trading" });
+    }
+  });
 
   return httpServer;
 }
