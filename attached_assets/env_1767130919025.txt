@@ -1,0 +1,30 @@
+# ==============================
+# MT5 ACCOUNT CONFIGURATION
+# ==============================
+
+MT5_LOGIN= 5044242311
+MT5_PASSWORD= NsLp!cY6
+MT5_SERVER=MetaQuotes-Demo
+
+# ==============================
+# APP SETTINGS
+# ==============================
+
+PAPER_TRADING=true
+DEFAULT_SYMBOL=EURUSD
+DEFAULT_TIMEFRAME=M5
+
+# ==============================
+# RISK MANAGEMENT
+# ==============================
+
+MAX_OPEN_POSITIONS=2
+MAX_LOT=0.10
+MAX_SPREAD_POINTS=25
+MAX_DAILY_LOSS_PCT=3.0
+
+# ==============================
+# FLASK
+# ==============================
+
+FLASK_SECRET_KEY=change_this_to_any_random_string
