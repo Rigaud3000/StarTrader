@@ -1,0 +1,112 @@
+STEP 1 — Add ML Confidence Filter (Replit-friendly)
+A) Add joblib to requirements.txt
+
+Add this line:
+
+joblib==1.4.2
+
+B) Add these files in Replit
+
+Create:
+
+✅ ml/predictor_lr.py
+✅ ml/dataset_builder.py
+✅ ml/train_lr.py
+
+Use the same code I gave you earlier.
+
+✅ STEP 2 — Train the Model in Replit (Simulation Data)
+
+Since Replit can’t pull MT5 history, we train using your stored bars/trades.
+
+Option 1 (Best): Train from backtest bars
+
+When you run a backtest, your backtester already has a full dataframe of candles.
+
+✅ Modify your backtest route so it saves bars into:
+
+storage/backtests/latest_bars.csv
+
+
+Add this line in backtest code (right after you load the df):
+
+df.to_csv("storage/backtests/latest_bars.csv", index=False)
+
+✅ STEP 3 — Create a training command you can run on Replit
+
+Create a file:
+
+train_model.py
+import pandas as pd
+from ml.train_lr import train_lr_model
+
+df = pd.read_csv("storage/backtests/latest_bars.csv")
+res = train_lr_model(df, horizon=10, model_path="storage/ml_lr_model.joblib")
+print(res)
+
+
+Run in Replit shell:
+
+python train_model.py
+
+
+✅ This generates:
+
+storage/ml_lr_model.joblib
+
+✅ STEP 4 — Plug Confidence Filter Into Live Engine (Safe)
+
+In core/engine.py, after you get sig, do:
+
+from ml.predictor_lr import LRPredictor
+from ml.dataset_builder import build_features
+
+if not hasattr(self, "_predictor"):
+    self._predictor = LRPredictor()
+    self._predictor.load()
+
+x = build_features(df).iloc[-1].values.astype(float)
+confidence = self._predictor.predict_confidence(x)
+
+CONF_THRESHOLD = 0.70
+
+if sig.action in ("buy", "sell") and confidence < CONF_THRESHOLD:
+    self.journal.write("ml", "Skipped trade: low confidence", {"confidence": confidence, "signal": sig.action})
+    sig.action = "hold"
+
+
+✅ Now your bot will skip weak trades and only take high-quality signals.
+
+✅ STEP 5 — Verify It’s Working (In Replit)
+
+After training, start your live engine (paper mode).
+Check journal entries — you should see:
+
+“Skipped trade: low confidence”
+
+or “ML_conf=0.82” (in live status)
+
+✅ STEP 6 — When You Download to Windows (Later)
+
+On Windows you will:
+
+Install MT5 terminal
+
+Enable Algo Trading
+
+Run bot locally
+
+Re-train model on real MT5 bars (much better)
+
+🔥 Your Next Action Right Now
+
+Do this in order:
+
+✅ 1) Run a backtest
+✅ 2) Save bars to storage/backtests/latest_bars.csv
+✅ 3) Run:
+
+python train_model.py
+
+
+✅ 4) Start live engine (paper mode)

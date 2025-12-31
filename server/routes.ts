@@ -8,6 +8,9 @@ import {
   insertMT5ConfigSchema,
 } from "@shared/schema";
 import type { BacktestResult, BacktestTrade } from "@shared/schema";
+import { spawn } from "child_process";
+import * as fs from "fs";
+import * as path from "path";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -191,6 +194,19 @@ export async function registerRoutes(
           Math.max(1, Math.abs(trades.filter((t) => t.profit < 0).reduce((sum, t) => sum + t.profit, 0)))
       );
 
+      const barsData = generateSimulatedBars(startDate, endDate, symbol);
+      
+      const barsDir = path.join(process.cwd(), "storage", "backtests");
+      fs.mkdirSync(barsDir, { recursive: true });
+      const csvPath = path.join(barsDir, "latest_bars.csv");
+      
+      const csvHeader = "time,open,high,low,close,tick_volume,spread,real_volume\n";
+      const csvRows = barsData.map(bar => 
+        `${bar.time},${bar.open},${bar.high},${bar.low},${bar.close},${bar.tick_volume},${bar.spread},${bar.real_volume}`
+      ).join("\n");
+      fs.writeFileSync(csvPath, csvHeader + csvRows);
+      console.log(`Saved ${barsData.length} bars to ${csvPath}`);
+
       const result = await storage.createBacktestResult({
         strategyId,
         strategyName: strategy.name,
@@ -212,11 +228,44 @@ export async function registerRoutes(
         trades,
       });
 
-      res.json(result);
+      res.json({ ...result, barsSaved: barsData.length, barsPath: csvPath });
     } catch (error) {
       res.status(500).json({ error: "Failed to run backtest" });
     }
   });
+
+  function generateSimulatedBars(startDate: string, endDate: string, symbol: string) {
+    const bars = [];
+    const start = new Date(startDate).getTime();
+    const end = new Date(endDate).getTime();
+    const interval = 5 * 60 * 1000;
+    
+    let price = symbol.includes("JPY") ? 150.0 : 1.1000;
+    const volatility = symbol.includes("JPY") ? 0.5 : 0.0005;
+    
+    for (let time = start; time < end; time += interval) {
+      const change = (Math.random() - 0.5) * 2 * volatility;
+      const open = price;
+      const close = price + change;
+      const high = Math.max(open, close) + Math.random() * volatility;
+      const low = Math.min(open, close) - Math.random() * volatility;
+      
+      bars.push({
+        time: new Date(time).toISOString(),
+        open: open.toFixed(5),
+        high: high.toFixed(5),
+        low: low.toFixed(5),
+        close: close.toFixed(5),
+        tick_volume: Math.floor(Math.random() * 1000) + 100,
+        spread: Math.floor(Math.random() * 20) + 5,
+        real_volume: 0,
+      });
+      
+      price = close;
+    }
+    
+    return bars;
+  }
 
   app.get("/api/trades", async (req, res) => {
     try {
@@ -406,6 +455,91 @@ export async function registerRoutes(
       });
     } catch (error) {
       res.status(500).json({ error: "Failed to get app settings" });
+    }
+  });
+
+  app.post("/api/ml/train", async (req, res) => {
+    try {
+      const barsPath = path.join(process.cwd(), "storage", "backtests", "latest_bars.csv");
+      
+      if (!fs.existsSync(barsPath)) {
+        return res.status(400).json({ 
+          error: "No training data found. Run a backtest first to generate training data." 
+        });
+      }
+
+      const python = spawn("python", ["train_model.py"], {
+        cwd: process.cwd(),
+        env: { ...process.env }
+      });
+
+      let stdout = "";
+      let stderr = "";
+
+      python.stdout.on("data", (data) => {
+        stdout += data.toString();
+        console.log(`ML Training: ${data}`);
+      });
+
+      python.stderr.on("data", (data) => {
+        stderr += data.toString();
+        console.error(`ML Training Error: ${data}`);
+      });
+
+      python.on("close", (code) => {
+        if (code === 0) {
+          const modelPath = path.join(process.cwd(), "storage", "ml_lr_model.joblib");
+          const modelExists = fs.existsSync(modelPath);
+          
+          res.json({
+            success: true,
+            message: "Model training completed successfully",
+            output: stdout,
+            modelReady: modelExists,
+          });
+        } else {
+          res.status(500).json({
+            success: false,
+            error: "Training failed",
+            output: stdout,
+            stderr: stderr,
+          });
+        }
+      });
+
+      python.on("error", (err) => {
+        res.status(500).json({
+          success: false,
+          error: `Failed to start training: ${err.message}`,
+        });
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to start ML training" });
+    }
+  });
+
+  app.get("/api/ml/status", async (req, res) => {
+    try {
+      const modelPath = path.join(process.cwd(), "storage", "ml_lr_model.joblib");
+      const barsPath = path.join(process.cwd(), "storage", "backtests", "latest_bars.csv");
+      
+      const modelExists = fs.existsSync(modelPath);
+      const trainingDataExists = fs.existsSync(barsPath);
+      
+      let barCount = 0;
+      if (trainingDataExists) {
+        const content = fs.readFileSync(barsPath, "utf-8");
+        barCount = content.split("\n").length - 1;
+      }
+      
+      res.json({
+        modelTrained: modelExists,
+        trainingDataAvailable: trainingDataExists,
+        barCount,
+        confidenceThreshold: 0.70,
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get ML status" });
     }
   });
 

@@ -1,8 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
 import {
   Brain,
   TrendingUp,
@@ -12,8 +15,20 @@ import {
   Target,
   BarChart3,
   Minus,
+  Play,
+  CheckCircle,
+  XCircle,
+  Database,
+  Loader2,
 } from "lucide-react";
 import type { MLInsight } from "@shared/schema";
+
+interface MLStatus {
+  modelTrained: boolean;
+  trainingDataAvailable: boolean;
+  barCount: number;
+  confidenceThreshold: number;
+}
 
 const insightTypeConfig = {
   PATTERN: {
@@ -134,9 +149,36 @@ function InsightCard({ insight }: { insight: MLInsight }) {
 }
 
 export default function MLInsights() {
+  const { toast } = useToast();
+  
   const { data: insights, isLoading } = useQuery<MLInsight[]>({
     queryKey: ["/api/ml/insights"],
     refetchInterval: 30000,
+  });
+
+  const { data: mlStatus } = useQuery<MLStatus>({
+    queryKey: ["/api/ml/status"],
+    refetchInterval: 10000,
+  });
+
+  const trainMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("POST", "/api/ml/train");
+    },
+    onSuccess: (data: { success: boolean; message: string }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ml/status"] });
+      toast({
+        title: "Training Complete",
+        description: data.message,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Training Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
   });
 
   const stats = {
@@ -165,6 +207,86 @@ export default function MLInsights() {
           Auto-refresh every 30s
         </Badge>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Database className="w-5 h-5" />
+            ML Confidence Filter
+          </CardTitle>
+          <CardDescription>
+            Train a Logistic Regression model to filter low-confidence trades
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+              {mlStatus?.modelTrained ? (
+                <CheckCircle className="w-5 h-5 text-green-500" />
+              ) : (
+                <XCircle className="w-5 h-5 text-muted-foreground" />
+              )}
+              <div>
+                <div className="text-sm text-muted-foreground">Model Status</div>
+                <div className="font-medium">
+                  {mlStatus?.modelTrained ? "Trained" : "Not Trained"}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+              {mlStatus?.trainingDataAvailable ? (
+                <CheckCircle className="w-5 h-5 text-green-500" />
+              ) : (
+                <XCircle className="w-5 h-5 text-muted-foreground" />
+              )}
+              <div>
+                <div className="text-sm text-muted-foreground">Training Data</div>
+                <div className="font-medium">
+                  {mlStatus?.trainingDataAvailable ? "Available" : "Not Available"}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+              <BarChart3 className="w-5 h-5 text-muted-foreground" />
+              <div>
+                <div className="text-sm text-muted-foreground">Bar Count</div>
+                <div className="font-medium font-mono">
+                  {mlStatus?.barCount?.toLocaleString() ?? 0}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+              <Target className="w-5 h-5 text-muted-foreground" />
+              <div>
+                <div className="text-sm text-muted-foreground">Confidence Threshold</div>
+                <div className="font-medium font-mono">
+                  {((mlStatus?.confidenceThreshold ?? 0.7) * 100).toFixed(0)}%
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4 flex-wrap">
+            <Button
+              onClick={() => trainMutation.mutate()}
+              disabled={trainMutation.isPending || !mlStatus?.trainingDataAvailable}
+              data-testid="button-train-model"
+            >
+              {trainMutation.isPending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Play className="w-4 h-4 mr-2" />
+              )}
+              Train Model
+            </Button>
+            {!mlStatus?.trainingDataAvailable && (
+              <p className="text-sm text-muted-foreground">
+                Run a backtest first to generate training data
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <Card>
@@ -212,11 +334,11 @@ export default function MLInsights() {
                 <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
                   <span className="text-primary font-bold">1</span>
                 </div>
-                Data Collection
+                Run Backtest
               </div>
               <p className="text-sm text-muted-foreground">
-                The ML module collects trading data, price history, and market indicators
-                to build a comprehensive dataset for analysis.
+                Execute a backtest to generate historical bar data. This data is automatically
+                saved to train the ML model.
               </p>
             </div>
             <div className="space-y-2">
@@ -224,11 +346,11 @@ export default function MLInsights() {
                 <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
                   <span className="text-primary font-bold">2</span>
                 </div>
-                Pattern Recognition
+                Train Model
               </div>
               <p className="text-sm text-muted-foreground">
-                Using PyTorch neural networks, the system identifies patterns and trends
-                in historical data to predict future market movements.
+                Click "Train Model" to build features (RSI, MACD, SMA ratios, etc.)
+                and train a Logistic Regression classifier.
               </p>
             </div>
             <div className="space-y-2">
@@ -236,11 +358,11 @@ export default function MLInsights() {
                 <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
                   <span className="text-primary font-bold">3</span>
                 </div>
-                Adaptive Learning
+                Filter Trades
               </div>
               <p className="text-sm text-muted-foreground">
-                The model continuously learns from new trades and market data, improving
-                its predictions and adapting to changing market conditions.
+                The live engine uses ML confidence to skip low-quality signals,
+                only taking trades above the 70% threshold.
               </p>
             </div>
           </div>
