@@ -479,7 +479,7 @@ export async function registerRoutes(
         });
       }
 
-      const python = spawn("python", ["train_model.py"], {
+      const python = spawn("python3", ["train_model.py"], {
         cwd: process.cwd(),
         env: { ...process.env }
       });
@@ -590,7 +590,7 @@ export async function registerRoutes(
             return obj;
           });
 
-          const python = spawn("python", [
+          const python = spawn("python3", [
             "-c",
             `
 import sys
