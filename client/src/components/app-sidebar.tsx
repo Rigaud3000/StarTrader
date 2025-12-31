@@ -57,7 +57,7 @@ export function AppSidebar() {
           </div>
           <div className="flex flex-col">
             <span className="text-base font-semibold text-sidebar-foreground">
-              MT5 Trading Bot
+              Star Trader
             </span>
             <span className="text-xs text-muted-foreground">
               Automated Trading
