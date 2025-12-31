@@ -1,10 +1,9 @@
-modules = ["nodejs-20", "web", "postgresql-16", "python-3.11"]
+modules = ["nodejs-20", "web", "postgresql-16"]
 run = "npm run dev"
 hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 
 [nix]
 channel = "stable-24_05"
-packages = ["glibcLocales"]
 
 [[ports]]
 localPort = 5000
@@ -38,17 +37,3 @@ author = "agent"
 task = "shell.exec"
 args = "npm run dev"
 waitForPort = 5000
-
-[userenv]
-
-[userenv.shared]
-PAPER_TRADING = "true"
-DEFAULT_SYMBOL = "EURUSD"
-DEFAULT_TIMEFRAME = "M5"
-MAX_OPEN_POSITIONS = "2"
-MAX_LOT = "0.10"
-MAX_SPREAD_POINTS = "25"
-MAX_DAILY_LOSS_PCT = "3.0"
-
-[userenv.shared."MetaTrader 5 Login "]
-" Account Number" = "5044242311"
