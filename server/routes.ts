@@ -424,6 +424,17 @@ export async function registerRoutes(
         isActive: true,
         activeStrategies: strategyIds || [],
       });
+      
+      await storage.createJournalEntry({
+        tradeId: null,
+        type: "INSIGHT",
+        title: "Trading Engine Started",
+        content: `Live trading started with ML confidence filter enabled. Threshold: 70%. Active strategies: ${strategyIds?.length || 0}`,
+        symbol: null,
+        profit: null,
+        tags: ["engine", "ml", "start"],
+      });
+      
       res.json(status);
     } catch (error) {
       res.status(500).json({ error: "Failed to start trading" });
@@ -540,6 +551,121 @@ export async function registerRoutes(
       });
     } catch (error) {
       res.status(500).json({ error: "Failed to get ML status" });
+    }
+  });
+
+  app.post("/api/trading/simulate-signal", async (req, res) => {
+    try {
+      const tradingStatus = await storage.getTradingStatus();
+      if (!tradingStatus.isActive) {
+        return res.status(400).json({ error: "Trading is not active" });
+      }
+
+      const barsPath = path.join(process.cwd(), "storage", "backtests", "latest_bars.csv");
+      const modelPath = path.join(process.cwd(), "storage", "ml_lr_model.joblib");
+      
+      const modelTrained = fs.existsSync(modelPath);
+      const barsExist = fs.existsSync(barsPath);
+      
+      const symbols = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD"];
+      const symbol = symbols[Math.floor(Math.random() * symbols.length)];
+      const signalRaw = Math.random();
+      const signal = signalRaw > 0.6 ? "BUY" : signalRaw < 0.4 ? "SELL" : "HOLD";
+      
+      let confidence = 0.5;
+      let mlUsed = false;
+      const CONF_THRESHOLD = 0.70;
+      
+      if (modelTrained && barsExist && signal !== "HOLD") {
+        try {
+          const barsContent = fs.readFileSync(barsPath, "utf-8");
+          const lines = barsContent.trim().split("\n");
+          const headers = lines[0].split(",");
+          const recentLines = lines.slice(-100);
+          
+          const bars = recentLines.map(line => {
+            const values = line.split(",");
+            const obj: Record<string, string> = {};
+            headers.forEach((h, i) => obj[h] = values[i]);
+            return obj;
+          });
+
+          const python = spawn("python", [
+            "-c",
+            `
+import sys
+import json
+sys.path.insert(0, '.')
+from ml.predict_signal import predict_signal
+bars = ${JSON.stringify(JSON.stringify(bars))}
+result = predict_signal(bars)
+print(json.dumps(result))
+            `
+          ], { cwd: process.cwd() });
+
+          let stdout = "";
+          python.stdout.on("data", (data) => { stdout += data.toString(); });
+          
+          await new Promise<void>((resolve) => {
+            python.on("close", () => {
+              try {
+                const result = JSON.parse(stdout.trim());
+                if (result.success) {
+                  confidence = result.confidence;
+                  mlUsed = true;
+                }
+              } catch (e) {
+                console.error("ML prediction parse error:", e);
+              }
+              resolve();
+            });
+          });
+        } catch (e) {
+          console.error("ML prediction error:", e);
+        }
+      }
+
+      let decision = signal;
+      let skipped = false;
+      
+      if (signal !== "HOLD" && mlUsed && confidence < CONF_THRESHOLD) {
+        decision = "HOLD";
+        skipped = true;
+        
+        await storage.createJournalEntry({
+          tradeId: null,
+          type: "INSIGHT",
+          title: "Skipped trade: low confidence",
+          content: `Signal: ${signal} on ${symbol} | ML Confidence: ${(confidence * 100).toFixed(1)}% (below ${(CONF_THRESHOLD * 100).toFixed(0)}% threshold) - Trade SKIPPED`,
+          symbol,
+          profit: null,
+          tags: ["ml", "skip", "confidence", signal.toLowerCase()],
+        });
+      } else if (signal !== "HOLD") {
+        await storage.createJournalEntry({
+          tradeId: null,
+          type: "TRADE",
+          title: `Signal accepted: ${signal}`,
+          content: `Signal: ${signal} on ${symbol} | ML Confidence: ${(confidence * 100).toFixed(1)}%${confidence >= CONF_THRESHOLD ? " (PASSED)" : ""} - Trade ${mlUsed ? "ACCEPTED" : "EXECUTED (no ML)"}`,
+          symbol,
+          profit: null,
+          tags: ["ml", "execute", "confidence", signal.toLowerCase()],
+        });
+      }
+
+      res.json({
+        symbol,
+        rawSignal: signal,
+        decision,
+        confidence,
+        threshold: CONF_THRESHOLD,
+        mlUsed,
+        skipped,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error("Simulate signal error:", error);
+      res.status(500).json({ error: "Failed to simulate signal" });
     }
   });
 

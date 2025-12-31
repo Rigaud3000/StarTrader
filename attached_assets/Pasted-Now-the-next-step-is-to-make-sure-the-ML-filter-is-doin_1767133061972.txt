@@ -1,0 +1,89 @@
+Now the next step is to make sure the ML filter is doing real work (not just “trained”) and that your live engine is logging what it’s skipping/taking.
+
+What to do next (in Replit)
+1) Verify the model is actually being used in live trading
+
+Go to Live Trading → Start and confirm you see at least one of these:
+
+A visible “ML confidence” number on the page, OR
+
+Journal entries like:
+
+“Skipped trade: low confidence”
+
+“Trade executed (paper) – confidence 0.xx”
+
+If you don’t see either, the engine isn’t calling the predictor yet (even if the API says trained).
+
+2) Turn on “proof logs” (fastest confirmation)
+
+In your live engine code right where you compute confidence, write to the journal every decision:
+
+When signal is BUY/SELL: log confidence + threshold + decision (TAKE/SKIP)
+
+When signal is HOLD: log HOLD + confidence (optional)
+
+This gives undeniable visibility.
+
+3) Calibrate the threshold (70% is fine, but test)
+
+Run paper trading for ~30–50 signals and compare:
+
+Threshold 0.60 → more trades, more noise
+
+Threshold 0.70 → balanced
+
+Threshold 0.80 → fewer trades, often cleaner
+
+Goal: lower drawdown + higher win rate (not just higher confidence).
+
+The “professional” validation step (so you don’t overfit)
+
+Even with 105k bars, you must validate properly:
+
+A) Out-of-sample split
+
+Train on first 70%
+
+Test on last 30%
+Track:
+
+accuracy
+
+precision/recall
+
+AUC
+
+profit-based metric (best)
+
+B) Walk-forward
+
+Train → trade next window → roll forward.
+This matches live conditions.
+
+C) Reality check
+
+If your dataset label is “next candle up/down,” accuracy will usually hover near 50–55% because FX is noisy. That’s normal — profitability comes from:
+
+filtering only the best setups
+
+risk control
+
+Before Windows / real MT5
+
+Keep these safety rules:
+
+✅ PAPER_TRADING=true
+✅ MAX_DAILY_LOSS_PCT active
+✅ MAX_OPEN_POSITIONS low (1–2)
+✅ spread filter enabled
+✅ journal logging on every decision
+
+Quick question (so I give the exact next instruction)
+
+When you start Live Trading, do you see any ML confidence value on the page or in the journal?
+
+Reply:
+“Yes, I see confidence logs”
+or
+“No, I don’t see confidence logs”

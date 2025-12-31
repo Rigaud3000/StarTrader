@@ -37,8 +37,29 @@ import {
   X,
   Clock,
   Zap,
+  Brain,
+  Loader2,
+  Target,
 } from "lucide-react";
 import type { Trade, TradingStatus, Strategy, MT5Config } from "@shared/schema";
+
+interface MLSignalResult {
+  symbol: string;
+  rawSignal: string;
+  decision: string;
+  confidence: number;
+  threshold: number;
+  mlUsed: boolean;
+  skipped: boolean;
+  timestamp: string;
+}
+
+interface MLStatus {
+  modelTrained: boolean;
+  trainingDataAvailable: boolean;
+  barCount: number;
+  confidenceThreshold: number;
+}
 
 const SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "NZDUSD", "USDCHF", "XAUUSD"];
 
@@ -48,10 +69,16 @@ export default function Trading() {
   const [manualSymbol, setManualSymbol] = useState("");
   const [manualVolume, setManualVolume] = useState("0.1");
   const [manualType, setManualType] = useState<"BUY" | "SELL">("BUY");
+  const [lastSignal, setLastSignal] = useState<MLSignalResult | null>(null);
 
   const { data: mt5Config } = useQuery<MT5Config>({
     queryKey: ["/api/mt5/config"],
     refetchInterval: 5000,
+  });
+
+  const { data: mlStatus } = useQuery<MLStatus>({
+    queryKey: ["/api/ml/status"],
+    refetchInterval: 10000,
   });
 
   const { data: tradingStatus, isLoading: statusLoading } = useQuery<TradingStatus>({
@@ -143,6 +170,29 @@ export default function Trading() {
     onError: (error: Error) => {
       toast({
         title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const simulateSignalMutation = useMutation({
+    mutationFn: async (): Promise<MLSignalResult> => {
+      const response = await apiRequest("POST", "/api/trading/simulate-signal");
+      return response as unknown as MLSignalResult;
+    },
+    onSuccess: (data) => {
+      setLastSignal(data);
+      queryClient.invalidateQueries({ queryKey: ["/api/journal"] });
+      toast({
+        title: data.skipped ? "Signal Skipped" : `Signal: ${data.decision}`,
+        description: `${data.symbol} | Confidence: ${(data.confidence * 100).toFixed(1)}%`,
+        variant: data.skipped ? "default" : "default",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Simulation Failed",
         description: error.message,
         variant: "destructive",
       });
@@ -294,6 +344,76 @@ export default function Trading() {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="border-2 border-dashed border-primary/30">
+        <CardHeader className="flex flex-row items-center justify-between gap-2 flex-wrap">
+          <CardTitle className="flex items-center gap-2">
+            <Brain className="w-5 h-5" />
+            ML Confidence Filter
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            <Badge variant={mlStatus?.modelTrained ? "default" : "secondary"}>
+              Model: {mlStatus?.modelTrained ? "Ready" : "Not Trained"}
+            </Badge>
+            <Badge variant="outline">
+              Threshold: {((mlStatus?.confidenceThreshold ?? 0.7) * 100).toFixed(0)}%
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col md:flex-row items-start md:items-center gap-4">
+            <Button
+              onClick={() => simulateSignalMutation.mutate()}
+              disabled={!isTrading || simulateSignalMutation.isPending}
+              data-testid="button-simulate-signal"
+            >
+              {simulateSignalMutation.isPending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Target className="w-4 h-4 mr-2" />
+              )}
+              Simulate Signal
+            </Button>
+            
+            {lastSignal && (
+              <div className="flex items-center gap-4 p-3 rounded-lg bg-muted/50 flex-1">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="font-mono">
+                    {lastSignal.symbol}
+                  </Badge>
+                  <Badge 
+                    variant={lastSignal.rawSignal === "BUY" ? "default" : lastSignal.rawSignal === "SELL" ? "destructive" : "secondary"}
+                  >
+                    Signal: {lastSignal.rawSignal}
+                  </Badge>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">ML Confidence:</span>
+                  <span 
+                    className={`font-mono font-bold ${
+                      lastSignal.confidence >= lastSignal.threshold 
+                        ? "text-green-500" 
+                        : "text-red-500"
+                    }`}
+                    data-testid="text-ml-confidence"
+                  >
+                    {(lastSignal.confidence * 100).toFixed(1)}%
+                  </span>
+                </div>
+                <Badge variant={lastSignal.skipped ? "destructive" : "default"}>
+                  {lastSignal.skipped ? "SKIPPED" : "ACCEPTED"}
+                </Badge>
+              </div>
+            )}
+            
+            {!isTrading && (
+              <p className="text-sm text-muted-foreground">
+                Start trading to test the ML confidence filter
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-2">
