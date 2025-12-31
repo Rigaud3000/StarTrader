@@ -429,7 +429,7 @@ export async function registerRoutes(
         tradeId: null,
         type: "INSIGHT",
         title: "Trading Engine Started",
-        content: `Live trading started with ML confidence filter enabled. Threshold: 70%. Active strategies: ${strategyIds?.length || 0}`,
+        content: `Live trading started with ML confidence filter enabled. Threshold: 55%. Active strategies: ${strategyIds?.length || 0}`,
         symbol: null,
         profit: null,
         tags: ["engine", "ml", "start"],
@@ -547,7 +547,7 @@ export async function registerRoutes(
         modelTrained: modelExists,
         trainingDataAvailable: trainingDataExists,
         barCount,
-        confidenceThreshold: 0.70,
+        confidenceThreshold: 0.55,
       });
     } catch (error) {
       res.status(500).json({ error: "Failed to get ML status" });
@@ -567,14 +567,14 @@ export async function registerRoutes(
       const modelTrained = fs.existsSync(modelPath);
       const barsExist = fs.existsSync(barsPath);
       
-      const symbols = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD"];
+      const symbols = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCHF"];
       const symbol = symbols[Math.floor(Math.random() * symbols.length)];
       const signalRaw = Math.random();
       const signal = signalRaw > 0.6 ? "BUY" : signalRaw < 0.4 ? "SELL" : "HOLD";
       
       let confidence = 0.5;
       let mlUsed = false;
-      const CONF_THRESHOLD = 0.70;
+      const CONF_THRESHOLD = 0.55;
       
       if (modelTrained && barsExist && signal !== "HOLD") {
         try {

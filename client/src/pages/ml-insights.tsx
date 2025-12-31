@@ -362,7 +362,7 @@ export default function MLInsights() {
               </div>
               <p className="text-sm text-muted-foreground">
                 The live engine uses ML confidence to skip low-quality signals,
-                only taking trades above the 70% threshold.
+                only taking trades above the 55% threshold.
               </p>
             </div>
           </div>
