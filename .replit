@@ -49,3 +49,6 @@ MAX_OPEN_POSITIONS = "2"
 MAX_LOT = "0.10"
 MAX_SPREAD_POINTS = "25"
 MAX_DAILY_LOSS_PCT = "3.0"
+
+[userenv.shared."MetaTrader 5 Login "]
+" Account Number" = "5044242311"
